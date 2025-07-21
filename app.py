@@ -1,56 +1,69 @@
 # -----------------------------
-# Train XGBoost Model & Save Artifacts
+# Employee Salary Prediction – Streamlit App (Cloud/Local Compatible)
 # -----------------------------
+import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-import xgboost as xgb
+import shap
+import matplotlib.pyplot as plt
 import joblib
-import warnings
-warnings.filterwarnings("ignore")
+import xgboost as xgb
+from sklearn.preprocessing import StandardScaler
 
 # -----------------------------
-# Load Dataset
+# Load Model & Scaler
 # -----------------------------
-df = pd.read_csv(r"D:\VSCODE\Datanalaysis\AIML IBM\Dataset\Employee_Salary_Dataset.csv")
+model = xgb.XGBRegressor()
+model.load_model("xgb_model.json")
+scaler = joblib.load("scaler.pkl")
 
 # -----------------------------
-# Feature Engineering
+# Streamlit UI
 # -----------------------------
-df['Salary_per_Year'] = df['Salary'] / (df['Experience_Years'] + 1)
-df['Gender'] = LabelEncoder().fit_transform(df['Gender'])
+st.set_page_config(page_title="Employee Salary Predictor", layout="centered")
+st.title("💼 Employee Salary Prediction")
+st.markdown("Predict salary based on age, experience, and gender using a trained AI model.")
 
 # -----------------------------
-# Feature Selection
+# Option to Upload CSV (Mandatory in Cloud)
 # -----------------------------
-features = ['Experience_Years', 'Age', 'Gender', 'Salary_per_Year']
-X = df[features]
-y = df['Salary']
-
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
-
-# -----------------------------
-# Train XGBoost Model
-# -----------------------------
-xgb_model = xgb.XGBRegressor(random_state=42)
-xgb_model.fit(X_train_scaled, y_train)
+uploaded_file = st.file_uploader("Upload Employee Salary CSV", type=["csv"])
+if uploaded_file is not None:
+    df = pd.read_csv(uploaded_file)
+    st.success("✅ File uploaded successfully!")
+    st.write(df.head())
+else:
+    st.warning("⚠️ Please upload a CSV file to proceed.")
+    st.stop()
 
 # -----------------------------
-# Evaluate Model
+# Input Fields
 # -----------------------------
-y_pred = xgb_model.predict(X_test_scaled)
-print("MAE:", mean_absolute_error(y_test, y_pred))
-print("RMSE:", np.sqrt(mean_squared_error(y_test, y_pred)))
-print("R2 Score:", r2_score(y_test, y_pred))
+exp = st.slider("Years of Experience", 0, 40, 5)
+age = st.slider("Age", 18, 65, 30)
+gender = st.selectbox("Gender", ["Male", "Female"])
+gender_encoded = 1 if gender == "Male" else 0
 
 # -----------------------------
-# Save Model and Scaler
+# Prediction
 # -----------------------------
-xgb_model.save_model("xgb_model.json")
-joblib.dump(scaler, "scaler.pkl")
-print("✅ Model and scaler saved successfully!")
+input_df = pd.DataFrame([[exp, age, gender_encoded, 0]],
+                        columns=['Experience_Years', 'Age', 'Gender', 'Salary_per_Year'])
+scaled = scaler.transform(input_df)
+salary_pred = model.predict(scaled)[0]
+st.success(f"💰 Predicted Salary: ₹{salary_pred:,.2f}")
+
+# -----------------------------
+# SHAP Explainability
+# -----------------------------
+if st.button("Show Explainability"):
+    st.subheader("Feature Contribution (SHAP)")
+    explainer = shap.Explainer(model)
+    shap_values = explainer(scaled)
+    st.set_option('deprecation.showPyplotGlobalUse', False)
+    shap.plots.waterfall(shap_values[0], show=False)
+    st.pyplot(bbox_inches='tight')
+
+# -----------------------------
+# END OF APP
+# -----------------------------
